@@ -14,35 +14,31 @@ var ROTARY_COUNT = 8;
 
 var CC_START_TRACK_VOL = 176;
 
-var CC_MAP_VOLUME = {
-    TRACK1 : 176,
-    TRACK2 : 177,
-    TRACK3 : 178,
-    TRACK4 : 179,
-    TRACK5 : 180,
-    TRACK6 : 181,
-    TRACK7 : 182,
-    TRACK8 : 183,
-    TRACK9 : 184,
-    TRACK10: 185,
-    TRACK11: 186,
-    TRACK12: 187,
-    TRACK13: 188,
-    TRACK14: 189,
-    TRACK15: 190,
-    TRACK16: 191,
-}
+var MIDI_CHANNEL_COUNT = 16;
 
 var SEQ_MAP = {
-    GO : 242,
-    STOP : 252,
-    PLAY : 250,
-    ARM :   'f07f000606f7',
-    UNARM : 'f07f000607f7'
+    GO: 242,
+    STOP: 252,
+    PLAY: 250,
+    ARM: 'f07f000606f7',
+    UNARM: 'f07f000607f7'
 };
 
-function init()
-{
+var VOLUME_DATA_KEY = 7;
+var POSITION_CC_KEY = 242;
+
+var transport,
+    cursorTrack,
+    masterTrack,
+    application,
+    trackBank,
+    cursorDevice,
+    primaryInstrument,
+    userControls;
+
+var midiChannels = initArray(null, MIDI_CHANNEL_COUNT + 1);
+
+function init() {
     host.getMidiInPort(0).setMidiCallback(onMidi);
     host.getMidiInPort(0).setSysexCallback(onSysex);
 
@@ -50,13 +46,16 @@ function init()
     cursorTrack = host.createCursorTrack(2, 0);
     masterTrack = host.createMasterTrack(0);
 
-    // host.getMidiInPort(0).createNoteInput("CME UF5");
+    midiChannels[0] = host.getMidiInPort(0).createNoteInput("CME UF5");
+    midiChannels[0].setShouldConsumeEvents(false);
+
     for (var i = 0; i < 16; i++) {
         var hex = uint8ToHex(i),
-            channelcode = hex.substr(1).toUpperCase();
+            channelcode = hex.substr(1, 1).toUpperCase(),
+            channelNumber = i + 1;
 
-        var noteInput = host.getMidiInPort(0).createNoteInput("CME UF5 - Ch" + (i + 1), "?" + channelcode + "????");
-        noteInput.setShouldConsumeEvents(false);
+        midiChannels[channelNumber] = host.getMidiInPort(0).createNoteInput("CME UF5 - Ch" + channelNumber, "?" + channelcode + "????");
+        midiChannels[channelNumber].setShouldConsumeEvents(false);
     }
 
     application = host.createApplication();
@@ -69,43 +68,49 @@ function init()
 
     // Make CCs 2-119 freely mappable
     userControls = host.createUserControlsSection(HIGHEST_CC - LOWEST_CC + 1);
-    for ( var i = LOWEST_CC; i < HIGHEST_CC; i++)
-    {
-        if (!isInDeviceParametersRange(i))
-        {
+    for (var i = LOWEST_CC; i < HIGHEST_CC; i++) {
+        if (!isInDeviceParametersRange(i)) {
             var index = userIndexFromCC(i);
             userControls.getControl(index).setLabel("CC" + i);
         }
     }
 }
 
-function exit()
-{
+function exit() {
 }
 
-function isInDeviceParametersRange(cc)
-{
+function isInDeviceParametersRange(cc) {
     return cc >= DEVICE_START_CC && cc <= DEVICE_END_CC;
 }
 
-function userIndexFromCC(cc)
-{
-    if (cc > DEVICE_END_CC)
-    {
+function userIndexFromCC(cc) {
+    if (cc > DEVICE_END_CC) {
         return cc - LOWEST_CC - 8;
     }
 
     return cc - LOWEST_CC;
 }
 
-function onMidi(status, data1, data2)
-{
+var tempoCounter = 0;
 
-    if(status!=248 && status!=254){
-        println("Status: " + status + ", D1: " + data1 + ", D2: " + data2 + ", Ch: " + MIDIChannel(status));
+function onMidi(status, data1, data2) {
+    var channel = MIDIChannel(status);
+    if (isNoteOn(status) || isNoteOff(status, data2)) {
+        return;
     }
-    if (isChannelController(status))
-    {
+    if (status == 248) { // MIDI Clock
+        tempoCounter++;
+        return;
+    }
+    if (status == 254) { // MIDI Active Sensing
+        return;
+    }
+    if (status == POSITION_CC_KEY) {
+        var position = (data1 + (data2 * 128)) / 16;
+        transport.getPosition().setRaw(position);
+        return;
+    }
+    if (isChannelController(status)) {
 //        if (isInDeviceParametersRange(data1))
 //        {
 //            var index = data1 - DEVICE_START_CC;
@@ -116,56 +121,36 @@ function onMidi(status, data1, data2)
 //            var index = data1 - LOWEST_CC;
 //            userControls.getControl(index).set(data2, 128);
 //        }
-println(status);
-        switch (status) {
-            case CC_MAP_VOLUME.TRACK1:
-            case CC_MAP_VOLUME.TRACK2:
-            case CC_MAP_VOLUME.TRACK3:
-            case CC_MAP_VOLUME.TRACK4:
-            case CC_MAP_VOLUME.TRACK5:
-            case CC_MAP_VOLUME.TRACK6:
-            case CC_MAP_VOLUME.TRACK7:
-            case CC_MAP_VOLUME.TRACK8:
-            case CC_MAP_VOLUME.TRACK9:
-            case CC_MAP_VOLUME.TRACK10:
-            case CC_MAP_VOLUME.TRACK11:
-            case CC_MAP_VOLUME.TRACK12:
-            case CC_MAP_VOLUME.TRACK13:
-            case CC_MAP_VOLUME.TRACK14:
-            case CC_MAP_VOLUME.TRACK15:
-            case CC_MAP_VOLUME.TRACK16:
-                var index = status - CC_START_TRACK_VOL;
-                var track = trackBank.getTrack(index);
-                if (track && track != masterTrack) {
-                    println('VOL for track: '+index);
+        switch (data1) {
+            case VOLUME_DATA_KEY:
+                var track = trackBank.getTrack(channel);
+                if (track) {
                     track.getVolume().set(data2, 128);
                 }
-                break;
+                return;
         }
-
     }
-    switch(status) {
+    switch (status) {
         case SEQ_MAP.PLAY:
             transport.play();
-            println('PLAY');
-            break;
+            return;
         case SEQ_MAP.STOP:
             transport.stop();
-            println('STOP');
-            break;
+            return;
     }
+
+    println("Status: " + status + ", D1: " + data1 + ", D2: " + data2 + ", Ch: " + channel);
 }
 
 function onSysex(data) {
-    println("Sysex: "+data);
+    println("Sysex: " + data);
 
     if (data.matchesHexPattern("f0 7f 7f 04 01 7f ?? f7")) {
         var value = data.hexByteAt(6);
-        println("VOL: " + value);
         masterTrack.getVolume().set(value, 128);
     }
 
-    switch(data){
+    switch (data) {
         case SEQ_MAP.ARM:
             cursorTrack.getArm().set(true);
             println('ARM');
