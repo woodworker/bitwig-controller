@@ -24,4 +24,9 @@ function onMidi(status, data1, data2) {
 
 function onSysex(data) {
     printSysex(data);
+    if(data.matchesHexPattern('F0 42 40 00 01 12 00 5F 4F ?? F7')) {
+        var scene = data.hexByteAt(9);
+        println('scene ' + scene);
+        return;
+    }
 }

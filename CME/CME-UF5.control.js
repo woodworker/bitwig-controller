@@ -6,8 +6,8 @@ host.defineMidiPorts(1, 0);
 var LOWEST_CC = 2;
 var HIGHEST_CC = 190;
 
-var DEVICE_START_CC = 20;
-var DEVICE_END_CC = 27;
+var DEVICE_START_CC = 14;
+var DEVICE_END_CC = 31;
 
 var FADER_COUNT = 8;
 var ROTARY_COUNT = 8;
@@ -15,6 +15,7 @@ var ROTARY_COUNT = 8;
 var CC_START_TRACK_VOL = 176;
 
 var MIDI_CHANNEL_COUNT = 16;
+var PROGRAMM_CHANGER = 192;
 
 var SEQ_MAP = {
     GO: 242,
@@ -33,10 +34,39 @@ var transport,
     application,
     trackBank,
     cursorDevice,
-    primaryInstrument,
+    primaryDevice,
     userControls;
 
 var midiChannels = initArray(null, MIDI_CHANNEL_COUNT + 1);
+
+
+function EndlessScroller(max, nextCallback, prevCallback) {
+    var lastValue = null;
+    var maxValue = max;
+
+    return function(value) {
+        if(lastValue==maxValue && value == 0) {
+            lastValue = value;
+            nextCallback();
+            return;
+        }
+        if(lastValue == 0 && value == maxValue) {
+            lastValue = value;
+            prevCallback();
+            return;
+        }
+
+        if(value > lastValue) {
+            lastValue = value;
+            nextCallback();
+            return;
+        }
+        if(value < lastValue) {
+            lastValue = value;
+            prevCallback();
+        }
+    }
+}
 
 function init() {
     host.getMidiInPort(0).setMidiCallback(onMidi);
@@ -64,34 +94,28 @@ function init() {
     cursorTrack = host.createCursorTrackSection(2, 0);
     cursorDevice = host.createCursorDeviceSection(8);
 
-    primaryInstrument = cursorTrack.getPrimaryInstrument();
-
-    // Make CCs 2-119 freely mappable
-    userControls = host.createUserControlsSection(HIGHEST_CC - LOWEST_CC + 1);
-    for (var i = LOWEST_CC; i < HIGHEST_CC; i++) {
-        if (!isInDeviceParametersRange(i)) {
-            var index = userIndexFromCC(i);
-            userControls.getControl(index).setLabel("CC" + i);
-        }
-    }
+    primaryDevice = cursorTrack.getPrimaryDevice();
+    println(primaryDevice.getCommonParameter(0));
+    println(primaryDevice.getCommonParameter(1));
+    println(primaryDevice.getCommonParameter(2));
+    println(primaryDevice.getCommonParameter(3));
+    println(primaryDevice.getCommonParameter(4));
+    println(primaryDevice.getEnvelopeParameter(0).addValueDisplayObserver(8, "", function(val){
+        println('env 0'+val);
+    }));
 }
 
 function exit() {
 }
 
-function isInDeviceParametersRange(cc) {
-    return cc >= DEVICE_START_CC && cc <= DEVICE_END_CC;
-}
-
-function userIndexFromCC(cc) {
-    if (cc > DEVICE_END_CC) {
-        return cc - LOWEST_CC - 8;
-    }
-
-    return cc - LOWEST_CC;
-}
 
 var tempoCounter = 0;
+
+var trackSelector = EndlessScroller(127, function(){
+    cursorTrack.selectNext();
+}, function() {
+    cursorTrack.selectPrevious();
+})
 
 function onMidi(status, data1, data2) {
     var channel = MIDIChannel(status);
@@ -110,17 +134,11 @@ function onMidi(status, data1, data2) {
         transport.getPosition().setRaw(position);
         return;
     }
+    if(status == PROGRAMM_CHANGER) {
+        trackSelector(data1);
+        return;
+    }
     if (isChannelController(status)) {
-//        if (isInDeviceParametersRange(data1))
-//        {
-//            var index = data1 - DEVICE_START_CC;
-//            primaryInstrument.getMacro(index).getAmount().set(data2, 128);
-//        }
-//        else if (data1 >= LOWEST_CC && data1 <= HIGHEST_CC)
-//        {
-//            var index = data1 - LOWEST_CC;
-//            userControls.getControl(index).set(data2, 128);
-//        }
         switch (data1) {
             case VOLUME_DATA_KEY:
                 var track = trackBank.getTrack(channel);
