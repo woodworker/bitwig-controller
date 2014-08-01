@@ -33,3 +33,7 @@ CME UF5
   * Channel 1 - 16
   * Split works automatically (Default Ch1 and Ch2)
 
+Korg nanoPAD2
+-------------
+
+* reacting on scene change but no bitwig functions mapped
