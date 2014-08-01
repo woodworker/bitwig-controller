@@ -3,7 +3,6 @@ bitwig-controller
 
 My Bitwig Controller Scripts
 
-
 CME UF5
 -------
 
@@ -24,6 +23,9 @@ CME UF5
  * Vol8 - Vol16 -> Volume of Track 8-16
 
  * CS0 - CS8 -> Not yet implemented
+
+**Misc**
+ * Programmchanger ist now Track selector
 
 **Export all 16 MIDI Channels + The "All" Channel**
 
